@@ -4,7 +4,7 @@ from torch import optim, nn
 from torchvision import datasets, models, transforms
 
 from torch.autograd import Variable
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 
 import pandas as pd
 import numpy as np
@@ -44,12 +44,8 @@ class Trainer:
     """
     def __init__(self, dataset, model, model_parameters, batch_size=16,
                     lr=0.001, lrs_step_size=10, lrs_gamma=0.1):
-
-        self.train_dataset, self.val_dataset = self.split_dataset(dataset)
-        self.train_loader = DataLoader(self.train_dataset, batch_size=batch_size,
-                                        shuffle=False, num_workers=8)
-        self.val_loader = DataLoader(self.val_dataset, batch_size=batch_size,
-                                        shuffle=False, num_workers=8)
+        self.dataset = dataset
+        self.train_loader, self.val_loader = self.split_dataset(dataset, batch_size=batch_size)
 
         self.model, self.model_parameters = model, model_parameters
 
@@ -59,9 +55,32 @@ class Trainer:
 
         self.batch_size = batch_size
 
-    def split_dataset(self, dataset):
+    def split_dataset(self, dataset, batch_size=16, validation_split=0.2, shuffle=False, random_seed=42):
         """Splits dataset into train and validation"""
-        return dataset, dataset  # TODO
+        # Creating data indices for training and validation splits:
+        dataset_size = len(dataset)
+        indices = list(range(dataset_size))
+        split = int(np.floor(validation_split * dataset_size))
+        if shuffle:
+            np.random.seed(random_seed)
+            np.random.shuffle(indices)
+        train_indices, val_indices = indices[split:], indices[:split]
+        
+        train_dataset = Subset(dataset, train_indices)
+        validation_dataset = Subset(dataset, val_indices)
+
+        train_loader = DataLoader(train_dataset, batch_size=batch_size,
+                                    shuffle=shuffle, num_workers=1)
+        validation_loader = DataLoader(validation_dataset, batch_size=batch_size,
+                                    shuffle=shuffle, num_workers=1)
+#        train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, 
+#                                                   sampler=train_sampler,
+#                                                   num_workers=1)
+#        validation_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
+#                                                        sampler=valid_sampler,
+#                                                        num_workers=1)
+                
+        return train_loader, validation_loader
 
     def train(self, num_epochs):
         """Trains our model with associated hyperparameters (lr, batch_size)
@@ -118,13 +137,35 @@ class Trainer:
                     running_loss = 0.0
     
             # Print and store statistics
-            training_loss = training_loss / len(landmark_dataset)
-            training_error = training_error / len(landmark_dataset)
+            training_loss = training_loss / len(self.dataset) / 0.8
+            training_error = training_error / len(self.dataset) / 0.8
             print('Training_loss: ' + str(training_loss))
             print('Training error: ' + str(training_error))
             training_loss_plot.append(training_loss)
             training_error_plot.append(training_error)
+
+            # Calculate validation error
+            val_error = 0.0
+            for i_batch, sample_batch in enumerate(self.val_loader):
+                # get the inputs
+                inputs, labels = sample_batch['image'], sample_batch['label']
+       
+                # Cast inputs and labels to torch.Variable
+                inputs = Variable(inputs)
+                labels = Variable(labels)
+    
+                # forward + backward + optimize
+                outputs = self.model(inputs)
+
+                # Training error
+                y_pred = outputs.data.max(1)[1].numpy()
+                y_true = labels.data.numpy()
+                
+                val_error += np.sum(y_pred != y_true)
+            val_error = val_error / len(self.dataset) / 0.2
+            print('Validation error: ' + str(val_error))
             
+            ### Hyperparameter adjustment ##
             # Increment scheduler
             self.lr_scheduler.step(training_loss)
         print('Finished Training')
@@ -134,15 +175,15 @@ class Trainer:
         training_error_plot_list.append(training_error_plot)
     
 if __name__ == "__main__":
-    landmark_dataset = LandmarksDataset(csv_file='small-dataset/small-dataset.csv',
-                                            root_dir='small-dataset/',
+    landmark_dataset = LandmarksDataset(csv_file='toy-dataset/toy-dataset.csv',
+                                            root_dir='toy-dataset/',
                                             transform=transforms.Compose([
                                                        transforms.ToPILImage(),
                                                        transforms.Resize(256),
                                                        transforms.RandomCrop(244),
                                                        transforms.ToTensor()]))
 
-    model, fc_parameters = load_net(num_classes=10)
+    model, fc_parameters = load_net(num_classes=2)
     
     trainer = Trainer(landmark_dataset, model=model, model_parameters=fc_parameters,
                         batch_size=16, lr=0.001)

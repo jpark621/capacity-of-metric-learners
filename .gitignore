@@ -1,6 +1,7 @@
 # Datasets
 small-dataset/
 toy-dataset/
+*dataset/
 
 # Cache
 __pycache__/
