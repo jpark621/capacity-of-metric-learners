@@ -1,0 +1,6 @@
+# Datasets
+small-dataset/
+toy-dataset/
+
+# Cache
+__pycache__/
