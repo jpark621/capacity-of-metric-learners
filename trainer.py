@@ -1,15 +1,20 @@
+
+from dataset import LandmarksDataset
+from loss import ContrastiveLoss
+
 import torch
 import torchvision
+
 from torch import optim, nn
 from torchvision import datasets, models, transforms
-
 from torch.autograd import Variable
 from torch.utils.data import DataLoader, Subset
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-from dataset import LandmarksDataset
+import matplotlib.pyplot as plt
+
 
 def load_net(num_classes=2):
     model_conv = torchvision.models.resnet18(pretrained=True)
@@ -43,13 +48,13 @@ class Trainer:
 
     """
     def __init__(self, dataset, model, model_parameters, batch_size=16,
-                    lr=0.001, lrs_step_size=10, lrs_gamma=0.1):
+                    lr=0.001, lrs_step_size=10, lrs_gamma=0.1, shuffle=True):
         self.dataset = dataset
-        self.train_loader, self.val_loader = self.split_dataset(dataset, batch_size=batch_size)
+        self.train_loader, self.val_loader = self.split_dataset(dataset, batch_size=batch_size, shuffle=shuffle)
 
         self.model, self.model_parameters = model, model_parameters
 
-        self.criterion = nn.CrossEntropyLoss()   # For classification tasks
+        self.criterion = ContrastiveLoss()   # For Siamese Learning
         self.optimizer = optim.Adam(self.model_parameters, lr=lr)
         self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=lrs_step_size, gamma=lrs_gamma)
 
@@ -100,18 +105,18 @@ class Trainer:
             training_error = 0.0
             for i_batch, sample_batch in enumerate(self.train_loader):
                 # get the inputs
-                inputs, labels = sample_batch['image'], sample_batch['label']
+                images0, images1, labels = sample_batch['image0'], sample_batch['image1'], sample_batch['label']
        
                 # Cast inputs and labels to torch.Variable
-                inputs = Variable(inputs)
+                images0, images1 = Variable(images0), Variable(images1)
                 labels = Variable(labels)
     
                 # zero the parameter gradients
                 self.optimizer.zero_grad()
     
                 # forward + backward + optimize
-                outputs = self.model(inputs)
-                loss = self.criterion(outputs, labels)
+                outputs0, outputs1 = self.model(images0, images1)
+                loss = self.criterion(outputs0, outputs1, labels)
                 loss.backward()
                 self.optimizer.step()
     
@@ -121,17 +126,23 @@ class Trainer:
                 training_loss += loss.data.item()
                 
                 # Training error
-                y_pred = outputs.data.max(1)[1].numpy()
+                y_pred0 = outputs0.max(1)[1].numpy()
+                y_pred1 = outputs1.max(1)[1].numpy()
+                print(y_pred0)
+                print(y_pred1)
+                y_pred = np.abs(y_pred0 - y_pred1)
+                print(y_pred)
                 y_true = labels.data.numpy()
+                print(y_true)
+                
+                #print("Pred: " + str(y_pred))
+                #print("True: " + str(y_true))
                 
                 training_error += np.sum(y_pred != y_true)
     
                 # Print Statistics
                 print_every = 2
                 if i_batch % print_every == print_every - 1:
-                    _, y_pred = outputs.data.max(0)
-                    y_true = labels.data
-    
                     print('[%d , %5d] loss: %.3f' %
                           (epoch + 1, i_batch + 1, running_loss / self.batch_size))
                     running_loss = 0.0
@@ -144,35 +155,32 @@ class Trainer:
             training_loss_plot.append(training_loss)
             training_error_plot.append(training_error)
 
-            # Calculate validation error
-            val_error = 0.0
-            for i_batch, sample_batch in enumerate(self.val_loader):
-                # get the inputs
-                inputs, labels = sample_batch['image'], sample_batch['label']
+            ## TODO: Calculate validation error with siamese network
+            # # Calculate validation error
+            # val_error = 0.0
+            # for i_batch, sample_batch in enumerate(self.val_loader):
+            #     # get the inputs
+            #     images0, images1, labels = sample_batch['image0'], sample_batch['image1'], sample_batch['label']
        
-                # Cast inputs and labels to torch.Variable
-                inputs = Variable(inputs)
-                labels = Variable(labels)
+            #     # Cast inputs and labels to torch.Variable
+            #     images0, images1 = Variable(images0), Variable(images1)
+            #     labels = Variable(labels)
     
-                # forward + backward + optimize
-                outputs = self.model(inputs)
+            #     # forward + backward + optimize
+            #     outputs0, outputs1 = self.model(images0, images1)
 
-                # Training error
-                y_pred = outputs.data.max(1)[1].numpy()
-                y_true = labels.data.numpy()
+            #     # Training error
+            #     y_pred = outputs.data.max(1)[1].numpy()
+            #     y_true = labels.data.numpy()
                 
-                val_error += np.sum(y_pred != y_true)
-            val_error = val_error / len(self.dataset) / 0.2
-            print('Validation error: ' + str(val_error))
+            #     val_error += np.sum(y_pred != y_true)
+            # val_error = val_error / len(self.dataset) / 0.2
+            # print('Validation error: ' + str(val_error))
             
             ### Hyperparameter adjustment ##
             # Increment scheduler
             self.lr_scheduler.step(training_loss)
         print('Finished Training')
-        
-        # Store statistics
-        training_loss_plot_list.append(training_loss_plot)
-        training_error_plot_list.append(training_error_plot)
     
 if __name__ == "__main__":
     landmark_dataset = LandmarksDataset(csv_file='toy-dataset/toy-dataset.csv',
@@ -186,9 +194,8 @@ if __name__ == "__main__":
     model, fc_parameters = load_net(num_classes=2)
     
     trainer = Trainer(landmark_dataset, model=model, model_parameters=fc_parameters,
-                        batch_size=16, lr=0.001)
+                        batch_size=1, lr=0.0001, shuffle=True)
 
     trainer.train(num_epochs=30)  # This should print status
     trainer.test()
-
 
