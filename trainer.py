@@ -8,7 +8,7 @@ import torchvision
 from torch import optim, nn
 from torchvision import datasets, models, transforms
 from torch.autograd import Variable
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, TensorDataset
 
 import numpy as np
 import pandas as pd
@@ -60,7 +60,7 @@ class Trainer:
 
         self.batch_size = batch_size
 
-    def split_dataset(self, dataset, batch_size=16, validation_split=0.2, shuffle=False, random_seed=42):
+    def split_dataset(self, dataset, batch_size=16, validation_split=0.2, shuffle=True, random_seed=42):
         """Splits dataset into train and validation"""
         # Creating data indices for training and validation splits:
         dataset_size = len(dataset)
@@ -71,19 +71,32 @@ class Trainer:
             np.random.shuffle(indices)
         train_indices, val_indices = indices[split:], indices[:split]
         
-        train_dataset = Subset(dataset, train_indices)
-        validation_dataset = Subset(dataset, val_indices)
+        # Create training and validation set using TensorDataset
+        train_images0, train_images1, train_labels = [], [], []
+        for i in train_indices:
+            train_images0.append(dataset[i]['image0'].numpy())
+            train_images1.append(dataset[i]['image1'].numpy())
+            train_labels.append(dataset[i]['label'].item())
+
+        val_images0, val_images1, val_labels = [], [], []
+        for i in val_indices:
+            val_images0.append(dataset[i]['image0'].numpy())
+            val_images1.append(dataset[i]['image1'].numpy())
+            val_labels.append(dataset[i]['label'].item())
+
+        train_labels = torch.FloatTensor(train_labels)
+        train_images0, train_images1, train_labels = torch.FloatTensor(train_images0), torch.FloatTensor(train_images1), \
+                                                        torch.FloatTensor(train_labels)
+        val_images0, val_images1, val_labels = torch.FloatTensor(val_images0), torch.FloatTensor(val_images1), \
+                                                    torch.FloatTensor(val_labels)
+
+        train_dataset = TensorDataset(train_images0, train_images1, train_labels)
+        validation_dataset = TensorDataset(val_images0, val_images1, val_labels)
 
         train_loader = DataLoader(train_dataset, batch_size=batch_size,
                                     shuffle=shuffle, num_workers=1)
         validation_loader = DataLoader(validation_dataset, batch_size=batch_size,
                                     shuffle=shuffle, num_workers=1)
-#        train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, 
-#                                                   sampler=train_sampler,
-#                                                   num_workers=1)
-#        validation_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
-#                                                        sampler=valid_sampler,
-#                                                        num_workers=1)
                 
         return train_loader, validation_loader
 
@@ -105,7 +118,7 @@ class Trainer:
             training_error = 0.0
             for i_batch, sample_batch in enumerate(self.train_loader):
                 # get the inputs
-                images0, images1, labels = sample_batch['image0'], sample_batch['image1'], sample_batch['label']
+                images0, images1, labels = sample_batch[0], sample_batch[1], sample_batch[2]
        
                 # Cast inputs and labels to torch.Variable
                 images0, images1 = Variable(images0), Variable(images1)
