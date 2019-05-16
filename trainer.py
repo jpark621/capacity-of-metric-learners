@@ -168,27 +168,29 @@ class Trainer:
             training_loss_plot.append(training_loss)
             training_error_plot.append(training_error)
 
-            ## TODO: Calculate validation error with siamese network
-            # # Calculate validation error
-            # val_error = 0.0
-            # for i_batch, sample_batch in enumerate(self.val_loader):
-            #     # get the inputs
-            #     images0, images1, labels = sample_batch['image0'], sample_batch['image1'], sample_batch['label']
+            # TODO: Calculate validation error with siamese network
+            # Calculate validation error
+            val_error = 0.0
+            for i_batch, sample_batch in enumerate(self.val_loader):
+                # get the inputs
+                images0, images1, labels = sample_batch[0], sample_batch[1], sample_batch[2]
        
-            #     # Cast inputs and labels to torch.Variable
-            #     images0, images1 = Variable(images0), Variable(images1)
-            #     labels = Variable(labels)
+                # Cast inputs and labels to torch.Variable
+                images0, images1 = Variable(images0), Variable(images1)
+                labels = Variable(labels)
     
-            #     # forward + backward + optimize
-            #     outputs0, outputs1 = self.model(images0, images1)
+                # forward + backward + optimize
+                outputs0, outputs1 = self.model(images0, images1)
 
-            #     # Training error
-            #     y_pred = outputs.data.max(1)[1].numpy()
-            #     y_true = labels.data.numpy()
+                # Validation error
+                y_pred0 = outputs0.max(1)[1].numpy()
+                y_pred1 = outputs1.max(1)[1].numpy()
+                y_pred = np.abs(y_pred0 - y_pred1)
+                y_true = labels.data.numpy()
                 
-            #     val_error += np.sum(y_pred != y_true)
-            # val_error = val_error / len(self.dataset) / 0.2
-            # print('Validation error: ' + str(val_error))
+                val_error += np.sum(y_pred != y_true)
+            val_error = val_error / len(self.dataset) / 0.2
+            print('Validation error: ' + str(val_error))
             
             ### Hyperparameter adjustment ##
             # Increment scheduler
