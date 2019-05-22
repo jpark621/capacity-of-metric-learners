@@ -1,4 +1,4 @@
-from dataset import SiameseLandmarksDataset
+from dataset import LandmarksDataset
 from model import SiameseNetwork
 from trainer import Trainer
 
@@ -6,7 +6,7 @@ import torch
 
 from torchvision import transforms
 
-siamese_landmark_dataset = SiameseLandmarksDataset(csv_file='toy-dataset/toy-dataset.csv',
+landmark_dataset = LandmarksDataset(csv_file='toy-dataset/toy-dataset.csv',
                                         root_dir='toy-dataset/',
                                         transform=transforms.Compose([
                                                    transforms.ToPILImage(),
@@ -16,8 +16,8 @@ siamese_landmark_dataset = SiameseLandmarksDataset(csv_file='toy-dataset/toy-dat
 
 model = SiameseNetwork()
 
-trainer = Trainer(siamese_landmark_dataset, model=model, model_parameters=model.parameters,
+trainer = Trainer(landmark_dataset, model=model, model_parameters=model.parameters,
                     batch_size=8, lr=0.001, shuffle=True)
 
 trainer.train(num_epochs=30)  # This should print status
-trainer.test()
+#trainer.test()

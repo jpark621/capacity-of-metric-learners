@@ -14,8 +14,7 @@ class SiameseNetwork(nn.Module):
         # Parameters of newly constructed modules have requires_grad=True by default
         num_ftrs = 2048                # Depends on network architecture
         model_conv.fc = nn.Sequential(nn.Linear(num_ftrs, int(num_ftrs / 2)), \
-                                      nn.Sigmoid(), \
-                                      nn.Linear(int(num_ftrs / 2), 2))
+                                      nn.ReLU())
 
         # Set model_conv to net
         self.model = model_conv
