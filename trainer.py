@@ -49,24 +49,33 @@ class Trainer:
 
 
     """
-    def __init__(self, dataset, model, model_parameters, batch_size=16,
+    def __init__(self, dataset, model, model_parameters, batch_size=16, doValidation=True,
                     lr=0.001, lrs_step_size=10, lrs_gamma=0.1, shuffle=True):
         # Load data
         self.dataset = dataset
-        self.train_dataset, self.val_dataset = self.split_dataset(dataset)
-        self.siamese_train_dataset, self.siamese_val_dataset = SiameseDataset(self.train_dataset), SiameseDataset(self.val_dataset)
-        self.train_loader = self.load_data(self.siamese_train_dataset, batch_size=batch_size, shuffle=shuffle)
-        self.val_loader = self.load_data(self.siamese_val_dataset, batch_size=batch_size, shuffle=shuffle)
+        if doValidation:
+            self.train_dataset, self.val_dataset = self.split_dataset(dataset, validation_split=validation_split)
+            self.siamese_train_dataset, self.siamese_val_dataset = SiameseDataset(self.train_dataset), SiameseDataset(self.val_dataset)
+            self.train_loader = self.load_data(self.siamese_train_dataset, batch_size=batch_size, shuffle=shuffle)
+            self.val_loader = self.load_data(self.siamese_val_dataset, batch_size=batch_size, shuffle=shuffle)
+        else:
+            self.train_dataset = self.dataset
+            self.siamese_train_dataset = SiameseDataset(self.train_dataset)
+            self.train_loader = self.load_data(self.siamese_train_dataset, batch_size=batch_size, shuffle=shuffle)
 
         # Load model
         self.model, self.model_parameters = model, model_parameters
 
-        self.criterion = ContrastiveLoss()   # For Siamese Learning
+        self.margin = 0.5
+        self.criterion = ContrastiveLoss(margin=self.margin)   # For Siamese Learning
         self.optimizer = optim.Adam(self.model_parameters, lr=lr)
         self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=lrs_step_size, gamma=lrs_gamma)
 
         # Hyperparameters
         self.batch_size = batch_size
+
+        # Set flags
+        self.doValidation = doValidation
 
     def split_dataset(self, dataset, shuffle_val_split=True, validation_split=0.2, random_seed=42):
         """Splits dataset into train and validation"""
@@ -96,10 +105,12 @@ class Trainer:
             * Make compatible with Tensorboard
         """
         training_loss_plot = []
+        training_error_plot = []
         for epoch in range(num_epochs):  # loop over the dataset multiple times
 
             running_loss = 0.0
             training_loss = 0.0
+            training_error = 0.0
             for i_batch, sample_batch in enumerate(self.train_loader):
                 # get the inputs
                 images0, images1, labels = sample_batch['image0'], sample_batch['image1'], sample_batch['label']
@@ -116,46 +127,60 @@ class Trainer:
                 loss = self.criterion(outputs0, outputs1, labels)
                 loss.backward()
                 self.optimizer.step()
-    
+
+                # Training error
+                margin = self.margin
+                pdist = nn.PairwiseDistance(p=2)
+                distance = pdist(outputs0, outputs1)
+                y_pred = (distance.detach().numpy() > margin).astype(int)
+                y_true = labels.detach().numpy()
+                training_error += np.sum(y_pred != y_true)
+
                 ### STATISTICS ###
                 # Training loss
                 running_loss += loss.data.item()
                 training_loss += loss.data.item()
     
                 # Print Statistics
-                print_every = 2
+                print_every = 100000
                 if i_batch % print_every == print_every - 1:
                     print('[%d , %5d] loss: %.3f' %
                           (epoch + 1, i_batch + 1, running_loss / self.batch_size))
                     running_loss = 0.0
     
             # Print and store statistics
-            training_loss = training_loss / len(self.dataset) / 0.8
-            print('Training_loss: ' + str(training_loss))
+            training_loss = training_loss / len(self.dataset)
+            training_error = training_error / len(self.dataset)
+            training_loss = training_loss / 0.8 if self.doValidation else training_loss
+            training_error = training_error / 0.8 if self.doValidation else training_error
+            #print('Training_loss: ' + str(training_loss))
             training_loss_plot.append(training_loss)
+            training_error_plot.append(training_error)
 
-            # Calculate validation error
-            validation_loss = 0
-            for i_batch, sample_batch in enumerate(self.val_loader):
-                # get the inputs
-                images0, images1, labels = sample_batch['image0'], sample_batch['image1'], sample_batch['label']
+            ### VALIDATION ###
+            if self.doValidation:
+                # Calculate validation error
+                validation_loss = 0
+                for i_batch, sample_batch in enumerate(self.val_loader):
+                    # get the inputs
+                    images0, images1, labels = sample_batch['image0'], sample_batch['image1'], sample_batch['label']
        
-                # Cast inputs and labels to torch.Variable
-                images0, images1 = Variable(images0), Variable(images1)
-                labels = Variable(labels)
+                    # Cast inputs and labels to torch.Variable
+                    images0, images1 = Variable(images0), Variable(images1)
+                    labels = Variable(labels)
     
-                # forward + backward + optimize
-                outputs0, outputs1 = self.model(images0, images1)
+                    # forward + backward + optimize
+                    outputs0, outputs1 = self.model(images0, images1)
 
-                # Validation loss
-                loss = self.criterion(outputs0, outputs1, labels)
-                validation_loss += loss.data.item()
+                    # Validation loss
+                    loss = self.criterion(outputs0, outputs1, labels)
+                    validation_loss += loss.data.item()
 
-            validation_loss = validation_loss / len(self.dataset) / 0.2
-            print('Validation loss: ' + str(validation_loss))
+                validation_loss = validation_loss / len(self.dataset) / 0.2
+                print('Validation loss: ' + str(validation_loss))
 
             # Calculate knn prediction error
-            print('=== knn prediction ===')
+            #print('=== knn prediction ===')
             loader = DataLoader(self.train_dataset, batch_size=len(self.train_dataset))
             train_dataset = next(iter(loader))
             train_outputs = self.model.single_forward(train_dataset['image'])
@@ -168,20 +193,23 @@ class Trainer:
             knn.fit(pca.transform(train_outputs), train_dataset['label'])
             y_pred = knn.predict(pca.transform(train_outputs))
             y_true = train_dataset['label'].detach().numpy()
-            print("KNN training error: " + str(np.mean(y_pred != y_true)))
+            #print("KNN training error: " + str(np.mean(y_pred != y_true)))
             
-            loader = DataLoader(self.val_dataset, batch_size=len(self.val_dataset))
-            val_dataset = next(iter(loader))
-            val_outputs = self.model.single_forward(val_dataset['image'])
-            val_outputs = val_outputs.detach().numpy()
+            if self.doValidation:
+                loader = DataLoader(self.val_dataset, batch_size=len(self.val_dataset))
+                val_dataset = next(iter(loader))
+                val_outputs = self.model.single_forward(val_dataset['image'])
+                val_outputs = val_outputs.detach().numpy()
 
-            y_pred = knn.predict(pca.transform(val_outputs))
-            y_true = val_dataset['label'].detach().numpy()
-            print("KNN validation error: " + str(np.mean(y_pred != y_true)))
+                y_pred = knn.predict(pca.transform(val_outputs))
+                y_true = val_dataset['label'].detach().numpy()
+                print("KNN validation error: " + str(np.mean(y_pred != y_true)))
 
             ### Hyperparameter adjustment ##
             # Increment scheduler
             self.lr_scheduler.step(training_loss)
+        print("Final Training Loss: " + str(training_loss_plot[-1]))
+        print("Final Training Error: " + str(training_error_plot[-1]))
         print('Finished Training')
     
 if __name__ == "__main__":

@@ -52,7 +52,25 @@ class LandmarksDataset(Dataset):
 
         return sample
 
-# Load data
+class RandomDataset(Dataset):
+    """Random dataset with input dimensions input_dims."""
+
+    def __init__(self, num_samples=1, input_dims=1):
+        self.input_dims = input_dims
+
+        # Initialize dataset
+        self.dataset = np.random.normal(size=(num_samples, input_dims))
+
+        # Initialize labels
+        self.labels = np.random.randint(0, 2, size=num_samples)
+
+    def __len__(self):
+        return self.dataset.shape[0]
+
+    def __getitem__(self, idx):
+        return {'image': torch.FloatTensor(self.dataset[idx]), 'label': torch.from_numpy(np.array(self.labels[idx])).float()}
+
+### SIAMESE DATA SAMPLER ###
 class SiameseDataset(Dataset):
     """Landmarks dataset."""
 
@@ -78,7 +96,7 @@ class SiameseDataset(Dataset):
 
             landmark_id0 = self.dataset[idx0]['label']
             landmark_id1 = self.dataset[idx1]['label']
-
+            
             if (should_be_similar and (landmark_id0 == landmark_id1)): break
             if (not should_be_similar and (landmark_id0 != landmark_id1)): break
  
@@ -107,3 +125,8 @@ if __name__ == "__main__":
     plt.imshow(image1.transpose(0, 2).transpose(0, 1))
     plt.show()
     print(label)
+
+    print(landmark_dataset[0]['label'])
+
+    random_dataset = RandomDataset(input_dims=1)
+    print(random_dataset[0]['label'])
