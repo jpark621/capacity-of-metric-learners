@@ -55,14 +55,14 @@ class LandmarksDataset(Dataset):
 class RandomDataset(Dataset):
     """Random dataset with input dimensions input_dims."""
 
-    def __init__(self, num_samples=1, input_dims=1):
+    def __init__(self, num_samples=1, input_dims=1, useLabels=False, labels=[]):
         self.input_dims = input_dims
 
         # Initialize dataset
         self.dataset = np.random.normal(size=(num_samples, input_dims))
 
         # Initialize labels
-        self.labels = np.random.randint(0, 2, size=num_samples)
+        self.labels = labels if useLabels else np.random.randint(0, 2, size=num_samples)
 
     def __len__(self):
         return self.dataset.shape[0]

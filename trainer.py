@@ -157,6 +157,10 @@ class Trainer:
             training_loss_plot.append(training_loss)
             training_error_plot.append(training_error)
 
+            # Create a shortcircuit if overfitted
+            if training_error == 0:
+                break
+
             ### VALIDATION ###
             if self.doValidation:
                 # Calculate validation error
@@ -208,9 +212,11 @@ class Trainer:
             ### Hyperparameter adjustment ##
             # Increment scheduler
             self.lr_scheduler.step(training_loss)
-        print("Final Training Loss: " + str(training_loss_plot[-1]))
-        print("Final Training Error: " + str(training_error_plot[-1]))
-        print('Finished Training')
+        #print("Final Training Loss: " + str(training_loss_plot[-1]))
+        #print("Final Training Error: " + str(training_error_plot[-1]))
+        self.training_loss_plot = training_loss_plot
+        self.training_error_plot = training_error_plot
+        #print('Finished Training')
     
 if __name__ == "__main__":
     landmark_dataset = LandmarksDataset(csv_file='toy-dataset/toy-dataset.csv',
