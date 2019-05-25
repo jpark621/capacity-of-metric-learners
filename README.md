@@ -13,7 +13,7 @@ to run capacity experiments.
 ## Results
 The following results were obtained for LM and MK capacities.
 
-![alt text][img/d_lm_mk]
+![alt text][https://github.com/jpark96/capacity-of-metric-learners/blob/master/img/d_lm_mk.png]
 
 Note that empirical results are affected by the low sample size for label configurations.
 
